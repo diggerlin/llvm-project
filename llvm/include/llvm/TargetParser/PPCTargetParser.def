@@ -78,3 +78,42 @@ PPC_CPU("power9",46)
 PPC_CPU("power10",47)
 #undef PPC_FEATURE
 #undef PPC_CPU
+
+#ifndef PPC_AIX_CPU
+#define PPC_AIX_CPU(NAME, IN_SYSCON, HIGH16MAGIC, LOW16MAGIC)
+#endif
+PPC_AIX_CPU("power4",1,0x000C,0)
+PPC_AIX_CPU("ppc970",0,0x0,0)
+PPC_AIX_CPU("power5",1,0x000f,0)
+PPC_AIX_CPU("power5+",1,0x000f,1)
+PPC_AIX_CPU("power6",1,0x0010,0)
+PPC_AIX_CPU("ppc-cell-be",0,0,0)
+PPC_AIX_CPU("power6x",1,0x0010,1)
+PPC_AIX_CPU("power7",1,0x0020,0)
+PPC_AIX_CPU("ppca2",0,0,0)
+PPC_AIX_CPU("ppc405",0,0,0)
+PPC_AIX_CPU("ppc440",0,0,0)
+PPC_AIX_CPU("ppc464",0,0,0)
+PPC_AIX_CPU("ppc476",0,0,0)
+PPC_AIX_CPU("power8",1,0x0030,0)
+PPC_AIX_CPU("power9",1,0x0040,0)
+PPC_AIX_CPU("power10",1,0x0050,0)
+#undef PPC_AIX_CPU
+
+#ifndef AIX_SYSCON_VERSION_IDX
+#define AIX_SYSCON_VERSION_IDX 2
+#endif
+
+#ifndef PPC_SYSTEMCONFIG_TYPE
+#define PPC_SYSTEMCONFIG_TYPE \
+Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int32Ty, \
+Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int32Ty, \
+Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int32Ty, \
+Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int32Ty, \
+Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int32Ty, \
+Int32Ty, Int32Ty, Int64Ty, Int32Ty, Int32Ty, Int32Ty, \
+Int32Ty, Int64Ty, Int64Ty, Int64Ty, Int64Ty, Int32Ty, \
+Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int32Ty, Int64Ty, \
+Int32Ty, Int8Ty, Int8Ty, Int8Ty, Int8Ty, Int32Ty, \
+Int32Ty, Int16Ty, Int16Ty, llvm::ArrayType::get(Int32Ty,3), Int32Ty
+#endif

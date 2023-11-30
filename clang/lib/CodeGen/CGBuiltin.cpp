@@ -16397,22 +16397,89 @@ Value *CodeGenFunction::EmitPPCBuiltinExpr(unsigned BuiltinID,
   //   return Builder.CreateFDiv(Op0, Op1, "swdiv")
 
   Intrinsic::ID ID = Intrinsic::not_intrinsic;
-
   switch (BuiltinID) {
   default: return nullptr;
 
   case Builtin::BI__builtin_cpu_is: {
     const Expr *CPUExpr = E->getArg(0)->IgnoreParenCasts();
     StringRef CPUStr = cast<clang::StringLiteral>(CPUExpr)->getString();
-    unsigned NumCPUID = StringSwitch<unsigned>(CPUStr)
+    llvm::Triple Triple = getTarget().getTriple();
+    if (Triple.isOSLinux()) {
+      unsigned NumCPUID = StringSwitch<unsigned>(CPUStr)
 #define PPC_CPU(Name, NumericID) .Case(Name, NumericID)
 #include "llvm/TargetParser/PPCTargetParser.def"
-                            .Default(-1U);
+                              .Default(-1U);
     Value *Op0 = llvm::ConstantInt::get(Int32Ty, PPC_FAWORD_CPUID);
     llvm::Function *F = CGM.getIntrinsic(Intrinsic::ppc_fixed_addr_ld);
     Value *TheCall = Builder.CreateCall(F, {Op0}, "cpu_is");
     return Builder.CreateICmpEQ(TheCall,
                                 llvm::ConstantInt::get(Int32Ty, NumCPUID));
+    } else if (Triple.isOSAIX()) {
+      unsigned IsCpuInAixSysConf;
+      unsigned CpuHi16Magic;
+      unsigned CpuLow16Magic;
+      std::tie(IsCpuInAixSysConf, CpuHi16Magic, CpuLow16Magic) =
+          StringSwitch<std::tuple<unsigned, unsigned, unsigned>>(CPUStr)
+#define PPC_AIX_CPU(NAME, IN_SYSCON, HIGH16MAGIC, LOW16MAGIC)                  \
+  .Case(NAME, {IN_SYSCON, HIGH16MAGIC, LOW16MAGIC})
+#include "llvm/TargetParser/PPCTargetParser.def"
+              .Default({0, 0, 0});
+      if (!IsCpuInAixSysConf)
+        // The CPU ID is not listed in _system_configuration of AIX OS, return
+        // false.
+        return llvm::ConstantInt::getFalse(ConvertType(E->getType()));
+
+      // In the extern variable _system_configuration of AIX OS. there is
+      // structure as:
+      //  extern struct _system_conf {
+      // int architecture;       /*processor architecture */
+      // int implementation;     /* processor implementation */
+      // int version;            /* processor version */
+      // ....
+      // } _system_configuration;
+
+      llvm::Type *STy = llvm::StructType::get(PPC_SYSTEMCONFIG_TYPE);
+#undef PPC_SYSTEMCONFIG_TYPE
+
+      llvm::Constant *SysConf =
+          CGM.CreateRuntimeVariable(STy, "_system_configuration");
+
+      // Grab the appropriate field from _system_configuration.
+      llvm::Value *Idxs[] = {ConstantInt::get(Int32Ty, 0),
+                             ConstantInt::get(Int32Ty, AIX_SYSCON_VERSION_IDX)};
+      llvm::Value *CpuId = Builder.CreateGEP(STy, SysConf, Idxs);
+      CpuId =
+          Builder.CreateAlignedLoad(Int32Ty, CpuId, CharUnits::fromQuantity(4));
+
+      // In /usr/include/sys/systemcfg.h of AIX OS there is a defintion as:
+      // #define PV_5            0x0F0000        /* Power PC 5 */
+      // #define PV_5_2          0x0F0001        /* Power PC 5 */
+      // #define PV_5_3          0x0F0002        /* Power PC 5 */
+      // builtin_cpu_is("power5") is true only when the value of version is
+      // PV_5. builtin_cpu_is("power5+") is true only when the value of
+      // version is PV_5_2 or PV_5_3.
+
+      llvm::Value *CpuIdHi16 = Builder.CreateLShr(CpuId, 16);
+      llvm::Value *CpuIdLow16 = Builder.CreateAnd(CpuId, 0x00000FFF);
+      llvm::Value *Zero = llvm::Constant::getNullValue(Int32Ty);
+
+      // Check whether the high 16 bits match or not. for example, for
+      // example: builtin_cpu_is("power5"), it check whether the high 16 is
+      // 0x00f0.
+      Value *IsCpuHi16Match = Builder.CreateICmpEQ(
+          CpuIdHi16, ConstantInt::get(Int32Ty, CpuHi16Magic));
+
+      // Check whether the low 16 bits match or not. if CpuLow16Magic is 1,
+      // the low 16 bits of version should be not zero. if if CpuLow16Magic
+      // is 0, the low 16 bits of version should be zero.
+      Value *IsCpuLow16Match = Builder.CreateICmp(
+          CpuLow16Magic ? ICmpInst::ICMP_NE : ICmpInst::ICMP_EQ, CpuIdLow16,
+          Zero);
+
+      // Check the value of high 16 bit and low 16 both match the magic
+      return Builder.CreateLogicalAnd(IsCpuLow16Match, IsCpuHi16Match);
+    }
+    LLVM_FALLTHROUGH;
   }
   case Builtin::BI__builtin_cpu_supports: {
     unsigned FeatureWord;

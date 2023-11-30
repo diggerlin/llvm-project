@@ -886,8 +886,17 @@ bool PPCTargetInfo::validateCpuSupports(StringRef FeatureStr) const {
 }
 
 bool PPCTargetInfo::validateCpuIs(StringRef CPUName) const {
+  llvm::Triple Triple = getTriple();
+  if (Triple.isOSLinux()) {
 #define PPC_CPU(NAME, NUM) .Case(NAME, true)
   return llvm::StringSwitch<bool>(CPUName)
 #include "llvm/TargetParser/PPCTargetParser.def"
       .Default(false);
+  } else if (Triple.isOSAIX()) {
+#define PPC_AIX_CPU(NAME, IN_SYSCON, HIGH16VALUE, ISLOW16ZERO) .Case(NAME, true)
+    return llvm::StringSwitch<bool>(CPUName)
+#include "llvm/TargetParser/PPCTargetParser.def"
+        .Default(false);
+  }
+  return false;
 }
