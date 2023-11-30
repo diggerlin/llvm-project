@@ -893,7 +893,7 @@ bool PPCTargetInfo::validateCpuIs(StringRef CPUName) const {
 #include "llvm/TargetParser/PPCTargetParser.def"
       .Default(false);
   } else if (Triple.isOSAIX()) {
-#define PPC_AIX_CPU(NAME, IN_SYSCON, HIGH16VALUE, ISLOW16ZERO) .Case(NAME, true)
+#define PPC_AIX_CPU(NAME, IN_SYSCON, HIGH16MAGIC, LOW16MAGIC) .Case(NAME, true)
     return llvm::StringSwitch<bool>(CPUName)
 #include "llvm/TargetParser/PPCTargetParser.def"
         .Default(false);
