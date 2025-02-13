@@ -380,9 +380,9 @@ define dso_local void @memsetTailV1B2(ptr nocapture noundef writeonly %p) local_
 ;
 ; P9-BE-LABEL: memsetTailV1B2:
 ; P9-BE:       # %bb.0: # %entry
+; P9-BE-NEXT:    xxspltib 0, 15
 ; P9-BE-NEXT:    li 4, 3855
 ; P9-BE-NEXT:    sth 4, 16(3)
-; P9-BE-NEXT:    xxspltib 0, 15
 ; P9-BE-NEXT:    stxv 0, 0(3)
 ; P9-BE-NEXT:    blr
 ;
@@ -433,9 +433,9 @@ define dso_local void @memsetTailV1B1(ptr nocapture noundef writeonly %p) local_
 ;
 ; P9-BE-LABEL: memsetTailV1B1:
 ; P9-BE:       # %bb.0: # %entry
+; P9-BE-NEXT:    xxspltib 0, 15
 ; P9-BE-NEXT:    li 4, 15
 ; P9-BE-NEXT:    stb 4, 16(3)
-; P9-BE-NEXT:    xxspltib 0, 15
 ; P9-BE-NEXT:    stxv 0, 0(3)
 ; P9-BE-NEXT:    blr
 ;
@@ -861,9 +861,9 @@ define dso_local void @memset2TailV1B2(ptr nocapture noundef writeonly %p) local
 ;
 ; P9-BE-LABEL: memset2TailV1B2:
 ; P9-BE:       # %bb.0: # %entry
+; P9-BE-NEXT:    xxspltib 0, 165
 ; P9-BE-NEXT:    li 4, -23131
 ; P9-BE-NEXT:    sth 4, 16(3)
-; P9-BE-NEXT:    xxspltib 0, 165
 ; P9-BE-NEXT:    stxv 0, 0(3)
 ; P9-BE-NEXT:    blr
 ;
@@ -917,9 +917,9 @@ define dso_local void @memset2TailV1B1(ptr nocapture noundef writeonly %p) local
 ;
 ; P9-BE-LABEL: memset2TailV1B1:
 ; P9-BE:       # %bb.0: # %entry
+; P9-BE-NEXT:    xxspltib 0, 165
 ; P9-BE-NEXT:    li 4, -91
 ; P9-BE-NEXT:    stb 4, 16(3)
-; P9-BE-NEXT:    xxspltib 0, 165
 ; P9-BE-NEXT:    stxv 0, 0(3)
 ; P9-BE-NEXT:    blr
 ;
