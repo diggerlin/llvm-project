@@ -9204,7 +9204,7 @@ getRuntimeCallSDValueHelper(SDValue Chain, const SDLoc &dl,
   CLI.setDebugLoc(dl)
       .setChain(Chain)
       .setLibCallee(DAG->getLibcalls().getLibcallImplCallingConv(LCImpl),
-                    CI->getType(), Callee, std::move(Args))
+                    CI->getType(), Callee, std::move(Args), *CI)
       .setTailCall(IsTailCall);
 
   return TLI->LowerCallTo(CLI);

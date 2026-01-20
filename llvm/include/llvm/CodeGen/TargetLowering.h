@@ -4827,16 +4827,53 @@ public:
 
     // setCallee with target/module-specific attributes
     CallLoweringInfo &setLibCallee(CallingConv::ID CC, Type *ResultType,
-                                   SDValue Target, ArgListTy &&ArgsList) {
+                                   SDValue Target, ArgListTy &&ArgsList,
+                                   AttributeSet ResultAttrs = {}) {
       return setLibCallee(CC, ResultType, ResultType, Target,
-                          std::move(ArgsList));
+                          std::move(ArgsList), ResultAttrs);
     }
 
     CallLoweringInfo &setLibCallee(CallingConv::ID CC, Type *ResultType,
                                    Type *OrigResultType, SDValue Target,
-                                   ArgListTy &&ArgsList) {
+                                   ArgListTy &&ArgsList,
+                                   AttributeSet ResultAttrs = {}) {
       OrigRetTy = OrigResultType;
       RetTy = ResultType;
+      IsInReg = ResultAttrs.hasAttribute(Attribute::InReg);
+      RetSExt = ResultAttrs.hasAttribute(Attribute::SExt);
+      RetZExt = ResultAttrs.hasAttribute(Attribute::ZExt);
+      NoMerge = ResultAttrs.hasAttribute(Attribute::NoMerge);
+      Callee = Target;
+      CallConv = CC;
+      NumFixedArgs = ArgsList.size();
+      Args = std::move(ArgsList);
+
+      DAG.getTargetLoweringInfo().markLibCallAttributes(
+          &(DAG.getMachineFunction()), CC, Args);
+      return *this;
+    }
+
+    // setCallee with target/module-specific attributes
+    CallLoweringInfo &setLibCallee(CallingConv::ID CC, Type *ResultType,
+                                   SDValue Target, ArgListTy &&ArgsList,
+                                   const CallBase &Call) {
+      return setLibCallee(CC, ResultType, ResultType, Target,
+                          std::move(ArgsList), Call);
+    }
+
+    CallLoweringInfo &setLibCallee(CallingConv::ID CC, Type *ResultType,
+                                   Type *OrigResultType, SDValue Target,
+                                   ArgListTy &&ArgsList, const CallBase &Call) {
+      OrigRetTy = OrigResultType;
+      RetTy = ResultType;
+      IsInReg = Call.hasRetAttr(Attribute::InReg);
+      DoesNotReturn =
+          Call.doesNotReturn() ||
+          (!isa<InvokeInst>(Call) && isa<UnreachableInst>(Call.getNextNode()));
+      IsReturnValueUsed = !Call.use_empty();
+      RetSExt = Call.hasRetAttr(Attribute::SExt);
+      RetZExt = Call.hasRetAttr(Attribute::ZExt);
+      NoMerge = Call.hasFnAttr(Attribute::NoMerge);
       Callee = Target;
       CallConv = CC;
       NumFixedArgs = ArgsList.size();
