@@ -4825,6 +4825,25 @@ public:
       return *this;
     }
 
+    void setAttributeSet(AttributeSet &ResultAttrs) {
+      IsInReg = ResultAttrs.hasAttribute(Attribute::InReg);
+      RetSExt = ResultAttrs.hasAttribute(Attribute::SExt);
+      RetZExt = ResultAttrs.hasAttribute(Attribute::ZExt);
+      NoMerge = ResultAttrs.hasAttribute(Attribute::NoMerge);
+    }
+
+    void setAttributeSet(const CallBase &Call) {
+      IsInReg = Call.hasRetAttr(Attribute::InReg);
+      DoesNotReturn =
+          Call.doesNotReturn() ||
+          (!isa<InvokeInst>(Call) && isa<UnreachableInst>(Call.getNextNode()));
+      IsVarArg = Call.getFunctionType()->isVarArg();
+      IsReturnValueUsed = !Call.use_empty();
+      RetSExt = Call.hasRetAttr(Attribute::SExt);
+      RetZExt = Call.hasRetAttr(Attribute::ZExt);
+      NoMerge = Call.hasFnAttr(Attribute::NoMerge);
+    }
+
     // setCallee with target/module-specific attributes
     CallLoweringInfo &setLibCallee(CallingConv::ID CC, Type *ResultType,
                                    SDValue Target, ArgListTy &&ArgsList,
@@ -4839,15 +4858,11 @@ public:
                                    AttributeSet ResultAttrs = {}) {
       OrigRetTy = OrigResultType;
       RetTy = ResultType;
-      IsInReg = ResultAttrs.hasAttribute(Attribute::InReg);
-      RetSExt = ResultAttrs.hasAttribute(Attribute::SExt);
-      RetZExt = ResultAttrs.hasAttribute(Attribute::ZExt);
-      NoMerge = ResultAttrs.hasAttribute(Attribute::NoMerge);
       Callee = Target;
       CallConv = CC;
       NumFixedArgs = ArgsList.size();
       Args = std::move(ArgsList);
-
+      setAttributeSet(ResultAttrs);
       DAG.getTargetLoweringInfo().markLibCallAttributes(
           &(DAG.getMachineFunction()), CC, Args);
       return *this;
@@ -4866,18 +4881,11 @@ public:
                                    ArgListTy &&ArgsList, const CallBase &Call) {
       OrigRetTy = OrigResultType;
       RetTy = ResultType;
-      IsInReg = Call.hasRetAttr(Attribute::InReg);
-      DoesNotReturn =
-          Call.doesNotReturn() ||
-          (!isa<InvokeInst>(Call) && isa<UnreachableInst>(Call.getNextNode()));
-      IsReturnValueUsed = !Call.use_empty();
-      RetSExt = Call.hasRetAttr(Attribute::SExt);
-      RetZExt = Call.hasRetAttr(Attribute::ZExt);
-      NoMerge = Call.hasFnAttr(Attribute::NoMerge);
       Callee = Target;
       CallConv = CC;
       NumFixedArgs = ArgsList.size();
       Args = std::move(ArgsList);
+      setAttributeSet(Call);
 
       DAG.getTargetLoweringInfo().markLibCallAttributes(
           &(DAG.getMachineFunction()), CC, Args);
@@ -4888,40 +4896,23 @@ public:
                                 SDValue Target, ArgListTy &&ArgsList,
                                 AttributeSet ResultAttrs = {}) {
       RetTy = OrigRetTy = ResultType;
-      IsInReg = ResultAttrs.hasAttribute(Attribute::InReg);
-      RetSExt = ResultAttrs.hasAttribute(Attribute::SExt);
-      RetZExt = ResultAttrs.hasAttribute(Attribute::ZExt);
-      NoMerge = ResultAttrs.hasAttribute(Attribute::NoMerge);
-
       Callee = Target;
       CallConv = CC;
       NumFixedArgs = ArgsList.size();
       Args = std::move(ArgsList);
+      setAttributeSet(ResultAttrs);
       return *this;
     }
 
-    CallLoweringInfo &setCallee(Type *ResultType, FunctionType *FTy,
-                                SDValue Target, ArgListTy &&ArgsList,
-                                const CallBase &Call) {
+    CallLoweringInfo &setCallee(Type *ResultType, SDValue Target,
+                                ArgListTy &&ArgsList, const CallBase &Call) {
       RetTy = OrigRetTy = ResultType;
-
-      IsInReg = Call.hasRetAttr(Attribute::InReg);
-      DoesNotReturn =
-          Call.doesNotReturn() ||
-          (!isa<InvokeInst>(Call) && isa<UnreachableInst>(Call.getNextNode()));
-      IsVarArg = FTy->isVarArg();
-      IsReturnValueUsed = !Call.use_empty();
-      RetSExt = Call.hasRetAttr(Attribute::SExt);
-      RetZExt = Call.hasRetAttr(Attribute::ZExt);
-      NoMerge = Call.hasFnAttr(Attribute::NoMerge);
-
       Callee = Target;
-
       CallConv = Call.getCallingConv();
-      NumFixedArgs = FTy->getNumParams();
+      NumFixedArgs = Call.getFunctionType()->getNumParams();
       Args = std::move(ArgsList);
-
       CB = &Call;
+      setAttributeSet(Call);
 
       return *this;
     }

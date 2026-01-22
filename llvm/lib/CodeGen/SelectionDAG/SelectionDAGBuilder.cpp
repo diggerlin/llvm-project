@@ -9104,7 +9104,6 @@ void SelectionDAGBuilder::LowerCallTo(const CallBase &CB, SDValue Callee,
                                       const BasicBlock *EHPadBB,
                                       const TargetLowering::PtrAuthInfo *PAI) {
   auto &DL = DAG.getDataLayout();
-  FunctionType *FTy = CB.getFunctionType();
   Type *RetTy = CB.getType();
 
   TargetLowering::ArgListTy Args;
@@ -9184,7 +9183,7 @@ void SelectionDAGBuilder::LowerCallTo(const CallBase &CB, SDValue Callee,
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(getCurSDLoc())
       .setChain(getRoot())
-      .setCallee(RetTy, FTy, Callee, std::move(Args), CB)
+      .setCallee(RetTy, Callee, std::move(Args), CB)
       .setTailCall(isTailCall)
       .setConvergent(CB.isConvergent())
       .setIsPreallocated(
