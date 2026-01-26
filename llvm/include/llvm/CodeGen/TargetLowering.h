@@ -4844,7 +4844,8 @@ public:
       NoMerge = Call.hasFnAttr(Attribute::NoMerge);
     }
 
-    // setCallee with target/module-specific attributes
+    // Set callee info for a library call, allowing caller-provided result
+    // attributes.
     CallLoweringInfo &setLibCallee(CallingConv::ID CC, Type *ResultType,
                                    SDValue Target, ArgListTy &&ArgsList,
                                    AttributeSet ResultAttrs = {}) {
@@ -4868,7 +4869,6 @@ public:
       return *this;
     }
 
-    // setCallee with target/module-specific attributes
     CallLoweringInfo &setLibCallee(CallingConv::ID CC, Type *ResultType,
                                    SDValue Target, ArgListTy &&ArgsList,
                                    const CallBase &Call) {
@@ -4876,6 +4876,8 @@ public:
                           std::move(ArgsList), Call);
     }
 
+    // Set callee info for a library call and propagate attribute information
+    // from the CallBase.
     CallLoweringInfo &setLibCallee(CallingConv::ID CC, Type *ResultType,
                                    Type *OrigResultType, SDValue Target,
                                    ArgListTy &&ArgsList, const CallBase &Call) {
