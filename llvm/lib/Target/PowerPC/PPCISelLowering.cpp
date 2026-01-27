@@ -11335,15 +11335,41 @@ SDValue PPCTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
     unsigned CmprOpc = OpVT == MVT::f128 ? PPC::XSTSTDCQP
                                          : (OpVT == MVT::f64 ? PPC::XSTSTDCDP
                                                              : PPC::XSTSTDCSP);
-    return SDValue(
-        DAG.getMachineNode(
-            PPC::SELECT_CC_I4, dl, MVT::i32,
-            {SDValue(DAG.getMachineNode(CmprOpc, dl, MVT::i32, Op.getOperand(2),
-                                        Op.getOperand(1)),
-                     0),
-             DAG.getConstant(1, dl, MVT::i32), DAG.getConstant(0, dl, MVT::i32),
-             DAG.getTargetConstant(PPC::PRED_EQ, dl, MVT::i32)}),
-        0);
+    // Create XSTSTDCDP node that outputs to CR field
+    SDValue TestDataClass =
+        SDValue(DAG.getMachineNode(CmprOpc, dl, MVT::i32, Op.getOperand(2),
+                                   Op.getOperand(1)),
+                0);
+    // Power10 optimization: Use setbc instead of SELECT_CC_I4
+    if (Subtarget.isISA3_1()) {
+      // Extract CR bit 2 (EQ bit) from CR0
+      SDValue SubRegIdx = DAG.getTargetConstant(PPC::sub_eq, dl, MVT::i32);
+      SDValue CRBit =
+          SDValue(DAG.getMachineNode(TargetOpcode::EXTRACT_SUBREG, dl, MVT::i1,
+                                     TestDataClass, SubRegIdx),
+                  0);
+
+      // Use PPCsetbc to convert CR bit to integer
+      return DAG.getNode(PPCISD::SETBC, dl, MVT::i32, CRBit);
+
+    } else {
+      // Power9/Power8/Power7/etc.: Use mfocrf + rlwinm
+
+      // Use MFOCRF to copy CR0 to GPR
+      SDValue CR0Reg = DAG.getRegister(PPC::CR0, MVT::i32);
+      SDValue MFOCRFNode =
+          DAG.getNode(PPCISD::MFOCRF, dl, MVT::i32, CR0Reg, MVT::Glue);
+
+      // Extract bit 2 (EQ bit) using RLWINM
+      // rlwinm rD, rS, 3, 31, 31
+      // Rotate left by 3 and extract bit 31 (the EQ bit after rotation)
+      SDValue SH = DAG.getTargetConstant(3, dl, MVT::i32);  // Shift amount
+      SDValue MB = DAG.getTargetConstant(31, dl, MVT::i32); // Mask begin
+      SDValue ME = DAG.getTargetConstant(31, dl, MVT::i32); // Mask end
+      return SDValue(DAG.getMachineNode(PPC::RLWINM, dl, MVT::i32,
+                                        {MFOCRFNode, SH, MB, ME}),
+                     0);
+    }
   }
   case Intrinsic::ppc_fnmsub: {
     EVT VT = Op.getOperand(1).getValueType();
@@ -17163,6 +17189,58 @@ static SDValue DAGCombineAddc(SDNode *N,
   }
   return SDValue();
 }
+/// Optimize (zero_extend (setcc (SETBC x), 0, seteq)) to (zero_extend (xor
+/// (SETBC x), 1)) This avoids the i32 -> i1 -> i32/i64 conversion and keeps the
+/// value in i32.
+static SDValue combineSetbcZext(SDNode *N, SelectionDAG &DAG) {
+  // Get the subtarget from the DAG
+  const PPCSubtarget &Subtarget =
+      DAG.getMachineFunction().getSubtarget<PPCSubtarget>();
+
+  // Only optimize on Power10+ where SETBC is available
+  if (!Subtarget.isISA3_1())
+    return SDValue();
+
+  // Check if this is a zero_extend
+  if (N->getOpcode() != ISD::ZERO_EXTEND)
+    return SDValue();
+
+  SDValue Src = N->getOperand(0);
+
+  // Check if the source is a setcc
+  if (Src.getOpcode() != ISD::SETCC)
+    return SDValue();
+
+  SDValue LHS = Src.getOperand(0);
+  SDValue RHS = Src.getOperand(1);
+  ISD::CondCode CC = cast<CondCodeSDNode>(Src.getOperand(2))->get();
+
+  if(!isNullConstant(RHS) && !isNullConstant(LHS))
+     return SDValue();
+
+  SDValue NonNullConstant = isNullConstant(RHS) ? LHS : RHS ;
+
+  if (NonNullConstant.getOpcode() != PPCISD::SETBC)
+    return SDValue();
+
+  // Check for pattern: zext(setcc (SETBC x), 0, seteq)) or 
+  // zext(setcc (SETBC x), 0, setne))
+  if (CC == ISD::SETEQ || CC == ISD::SETNE) {
+    // Replace with: (zext (xor (SETBC x), 1))
+    // This keeps the value in i32 instead of converting to i1
+    SDLoc DL(N);
+    EVT VType = N->getValueType(0);
+    SDValue NewNonNullConstant= DAG.getZExtOrTrunc(NonNullConstant, DL, VType);
+
+    if (CC == ISD::SETNE)
+      return NewNonNullConstant;
+
+    SDValue One = DAG.getConstant(1, DL, VType);
+    return  DAG.getNode(ISD::XOR, DL, VType, NewNonNullConstant, One);
+  }
+
+  return SDValue();
+}
 
 SDValue PPCTargetLowering::PerformDAGCombine(SDNode *N,
                                              DAGCombinerInfo &DCI) const {
@@ -17224,6 +17302,9 @@ SDValue PPCTargetLowering::PerformDAGCombine(SDNode *N,
     break;
   case ISD::SIGN_EXTEND:
   case ISD::ZERO_EXTEND:
+    if (SDValue RetV = combineSetbcZext(N, DCI.DAG))
+      return RetV;
+    [[fallthrough]];
   case ISD::ANY_EXTEND:
     return DAGCombineExtBoolTrunc(N, DCI);
   case ISD::TRUNCATE:
