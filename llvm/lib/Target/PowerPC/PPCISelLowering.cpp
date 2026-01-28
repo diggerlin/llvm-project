@@ -15817,10 +15817,61 @@ static SDValue ConvertSETCCToXori(SDNode *N, SelectionDAG &DAG) {
   llvm_unreachable("Should not reach here.");
 }
 
+/// Optimize (zero_extend (setcc (SETBC x), 0, seteq)) to (zero_extend (xor
+/// (SETBC x), 1)) This avoids the i32 -> i1 -> i32/i64 conversion and keeps the
+/// value in i32.
+static SDValue combineSetccSetbc(SDNode *N, SelectionDAG &DAG) {
+  // Get the subtarget from the DAG
+  const PPCSubtarget &Subtarget =
+      DAG.getMachineFunction().getSubtarget<PPCSubtarget>();
+
+  // Only optimize on Power10+ where SETBC is available
+  if (!Subtarget.isISA3_1())
+    return SDValue();
+
+  // Check if the source is a setcc
+  if (N->getOpcode() != ISD::SETCC)
+    return SDValue();
+
+  SDValue LHS = N->getOperand(0);
+  SDValue RHS = N->getOperand(1);
+  ISD::CondCode CC = cast<CondCodeSDNode>(N->getOperand(2))->get();
+
+  if (!isNullConstant(RHS) && !isNullConstant(LHS))
+    return SDValue();
+
+  SDValue NonNullConstant = isNullConstant(RHS) ? LHS : RHS;
+
+  if (NonNullConstant.getOpcode() != PPCISD::SETBC)
+    return SDValue();
+
+  // Check for pattern: zext(setcc (SETBC x), 0, seteq)) or
+  // zext(setcc (SETBC x), 0, setne))
+  if (CC == ISD::SETEQ || CC == ISD::SETNE) {
+    // Replace with: (zext (xor (SETBC x), 1))
+    // This keeps the value in i32 instead of converting to i1
+    SDLoc DL(N);
+    EVT VType = N->getValueType(0);
+    SDValue NewNonNullConstant = DAG.getZExtOrTrunc(NonNullConstant, DL, VType);
+
+    if (CC == ISD::SETNE)
+      return DAG.getNode(ISD::TRUNCATE, DL, MVT::i1, NewNonNullConstant);
+
+    SDValue One = DAG.getConstant(1, DL, VType);
+    SDValue Xor = DAG.getNode(ISD::XOR, DL, VType, NewNonNullConstant, One);
+    return DAG.getNode(ISD::TRUNCATE, DL, MVT::i1, Xor);
+  }
+
+  return SDValue();
+}
+
 SDValue PPCTargetLowering::combineSetCC(SDNode *N,
                                         DAGCombinerInfo &DCI) const {
   assert(N->getOpcode() == ISD::SETCC &&
          "Should be called with a SETCC node");
+
+  if (SDValue RetValue = combineSetccSetbc(N, DCI.DAG))
+    return RetValue;
 
   // Check if the pattern (setcc (and X, 1), 0, eq) is present.
   // If it is, rewrite it as XORI (and X, 1), 1.
@@ -17189,58 +17240,6 @@ static SDValue DAGCombineAddc(SDNode *N,
   }
   return SDValue();
 }
-/// Optimize (zero_extend (setcc (SETBC x), 0, seteq)) to (zero_extend (xor
-/// (SETBC x), 1)) This avoids the i32 -> i1 -> i32/i64 conversion and keeps the
-/// value in i32.
-static SDValue combineSetbcZext(SDNode *N, SelectionDAG &DAG) {
-  // Get the subtarget from the DAG
-  const PPCSubtarget &Subtarget =
-      DAG.getMachineFunction().getSubtarget<PPCSubtarget>();
-
-  // Only optimize on Power10+ where SETBC is available
-  if (!Subtarget.isISA3_1())
-    return SDValue();
-
-  // Check if this is a zero_extend
-  if (N->getOpcode() != ISD::ZERO_EXTEND)
-    return SDValue();
-
-  SDValue Src = N->getOperand(0);
-
-  // Check if the source is a setcc
-  if (Src.getOpcode() != ISD::SETCC)
-    return SDValue();
-
-  SDValue LHS = Src.getOperand(0);
-  SDValue RHS = Src.getOperand(1);
-  ISD::CondCode CC = cast<CondCodeSDNode>(Src.getOperand(2))->get();
-
-  if(!isNullConstant(RHS) && !isNullConstant(LHS))
-     return SDValue();
-
-  SDValue NonNullConstant = isNullConstant(RHS) ? LHS : RHS ;
-
-  if (NonNullConstant.getOpcode() != PPCISD::SETBC)
-    return SDValue();
-
-  // Check for pattern: zext(setcc (SETBC x), 0, seteq)) or 
-  // zext(setcc (SETBC x), 0, setne))
-  if (CC == ISD::SETEQ || CC == ISD::SETNE) {
-    // Replace with: (zext (xor (SETBC x), 1))
-    // This keeps the value in i32 instead of converting to i1
-    SDLoc DL(N);
-    EVT VType = N->getValueType(0);
-    SDValue NewNonNullConstant= DAG.getZExtOrTrunc(NonNullConstant, DL, VType);
-
-    if (CC == ISD::SETNE)
-      return NewNonNullConstant;
-
-    SDValue One = DAG.getConstant(1, DL, VType);
-    return  DAG.getNode(ISD::XOR, DL, VType, NewNonNullConstant, One);
-  }
-
-  return SDValue();
-}
 
 SDValue PPCTargetLowering::PerformDAGCombine(SDNode *N,
                                              DAGCombinerInfo &DCI) const {
@@ -17302,9 +17301,6 @@ SDValue PPCTargetLowering::PerformDAGCombine(SDNode *N,
     break;
   case ISD::SIGN_EXTEND:
   case ISD::ZERO_EXTEND:
-    if (SDValue RetV = combineSetbcZext(N, DCI.DAG))
-      return RetV;
-    [[fallthrough]];
   case ISD::ANY_EXTEND:
     return DAGCombineExtBoolTrunc(N, DCI);
   case ISD::TRUNCATE:
